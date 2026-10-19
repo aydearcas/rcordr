@@ -22,6 +22,11 @@ CREATE_NO_WINDOW = 0x08000000
 SYSTEM, MIC = "system", "mic"
 AUDIO_TIMEOUT = 4.0  # s máximos esperando a que arranquen las fuentes de audio
 
+# PortAudio no admite que dos hilos lo inicialicen, abran o cierren flujos a la
+# vez (se cierra el programa con un acceso inválido a memoria). Toda llamada de
+# control pasa por este candado; leer/escribir en flujos distintos sí es seguro.
+PA_LOCK = threading.Lock()
+
 
 def ffmpeg_exe() -> str:
     """Ruta del ffmpeg incluido en imageio-ffmpeg (verificado por hash al instalar).
@@ -60,28 +65,29 @@ class AudioCapture(threading.Thread):
         self._stop = threading.Event()
 
     def run(self):
-        pa = pyaudio.PyAudio()
-        keepalive = capture = None
+        pa = keepalive = capture = None
         try:
-            wasapi = pa.get_host_api_info_by_type(pyaudio.paWASAPI)
-            if self.source == SYSTEM:
-                device = pa.get_default_wasapi_loopback()
-            else:
-                device = pa.get_device_info_by_index(wasapi["defaultInputDevice"])
-            self.rate = int(device["defaultSampleRate"])
-            self.channels = min(2, device["maxInputChannels"])
+            with PA_LOCK:
+                pa = pyaudio.PyAudio()
+                wasapi = pa.get_host_api_info_by_type(pyaudio.paWASAPI)
+                if self.source == SYSTEM:
+                    device = pa.get_default_wasapi_loopback()
+                else:
+                    device = pa.get_device_info_by_index(wasapi["defaultInputDevice"])
+                self.rate = int(device["defaultSampleRate"])
+                self.channels = min(2, device["maxInputChannels"])
 
-            if self.source == SYSTEM:
-                silence = bytes(2 * self.channels * self.CHUNK)
-                keepalive = pa.open(
+                if self.source == SYSTEM:
+                    silence = bytes(2 * self.channels * self.CHUNK)
+                    keepalive = pa.open(
+                        format=pyaudio.paInt16, channels=self.channels, rate=self.rate,
+                        output=True, output_device_index=wasapi["defaultOutputDevice"],
+                        frames_per_buffer=self.CHUNK,
+                        stream_callback=lambda *a: (silence, pyaudio.paContinue))
+                capture = pa.open(
                     format=pyaudio.paInt16, channels=self.channels, rate=self.rate,
-                    output=True, output_device_index=wasapi["defaultOutputDevice"],
-                    frames_per_buffer=self.CHUNK,
-                    stream_callback=lambda *a: (silence, pyaudio.paContinue))
-            capture = pa.open(
-                format=pyaudio.paInt16, channels=self.channels, rate=self.rate,
-                input=True, input_device_index=device["index"],
-                frames_per_buffer=self.CHUNK)
+                    input=True, input_device_index=device["index"],
+                    frames_per_buffer=self.CHUNK)
             self.start_time = time.time()
             self.ready.set()
             with open(self.path, "wb") as f:
@@ -91,11 +97,13 @@ class AudioCapture(threading.Thread):
             self.error = e
         finally:
             self.ready.set()
-            for stream in (capture, keepalive):
-                if stream:
-                    stream.stop_stream()
-                    stream.close()
-            pa.terminate()
+            with PA_LOCK:
+                for stream in (capture, keepalive):
+                    if stream:
+                        stream.stop_stream()
+                        stream.close()
+                if pa:
+                    pa.terminate()
 
     def stop(self):
         self._stop.set()

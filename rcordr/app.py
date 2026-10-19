@@ -1,8 +1,10 @@
 """Aplicación: icono en la bandeja, atajos globales y coordinación."""
 
+import faulthandler
 import os
 import queue
 import subprocess
+import sys
 import threading
 import tkinter as tk
 from datetime import datetime
@@ -11,7 +13,7 @@ from pathlib import Path
 import pystray
 from PIL import ImageTk
 
-from . import config, icon, ui, winapi
+from . import __version__, config, icon, ui, winapi
 from .editor import VideoEditor
 from .hotkeys import HotkeyListener
 from .recorder import MIC, SYSTEM, Recorder, clean_temp
@@ -317,10 +319,34 @@ def _open_dir(path):
     subprocess.Popen(["explorer", str(path)])
 
 
+_log_file = None
+
+
+def _setup_log():
+    """Con pythonw no hay consola: errores y cierres inesperados van a rcordr.log.
+
+    faulthandler registra también los fallos nativos (p. ej. en el audio) con la
+    traza de Python. Se guarda el log de la sesión anterior como rcordr.log.1.
+    """
+    global _log_file
+    try:
+        config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+        path = config.DATA_DIR / "rcordr.log"
+        if path.exists():
+            os.replace(path, path.with_name("rcordr.log.1"))
+        _log_file = open(path, "w", encoding="utf-8", buffering=1)
+    except OSError:
+        return
+    sys.stdout = sys.stderr = _log_file  # tracebacks de Tk y de hilos
+    faulthandler.enable(_log_file, all_threads=True)
+    print(f"rcordr {__version__} · {datetime.now():%Y-%m-%d %H:%M:%S}")
+
+
 def main():
     winapi.set_dpi_aware()
     if not winapi.single_instance(config.APP_NAME):
         # Ya está abierta: que muestre el aviso con los atajos
         winapi.ActivationEvent(config.APP_NAME).signal()
         return
+    _setup_log()
     App().run()

@@ -17,7 +17,7 @@ import pyaudiowpatch as pyaudio
 from PIL import Image, ImageTk
 
 from . import ui, winapi
-from .recorder import CREATE_NO_WINDOW, ffmpeg_exe
+from .recorder import CREATE_NO_WINDOW, PA_LOCK, ffmpeg_exe
 
 MIN_LEN = 0.5        # duración mínima del recorte (s)
 AUDIO_RATE = 48000
@@ -121,8 +121,9 @@ class Player:
     def _play_audio(self, proc):
         stream = None
         try:
-            stream = self.pa.open(format=pyaudio.paInt16, channels=2, rate=AUDIO_RATE,
-                                  output=True)
+            with PA_LOCK:
+                stream = self.pa.open(format=pyaudio.paInt16, channels=2, rate=AUDIO_RATE,
+                                      output=True)
             self._go.wait()
             while not self._stop.is_set():
                 chunk = proc.stdout.read(4096)
@@ -133,8 +134,9 @@ class Player:
             pass  # sin salida de audio: la vista previa sigue sin sonido
         finally:
             if stream:
-                stream.stop_stream()
-                stream.close()
+                with PA_LOCK:
+                    stream.stop_stream()
+                    stream.close()
 
     def next_frame(self) -> bytes | None:
         """El fotograma que toca mostrar ahora, o None si no hay que cambiarlo."""
@@ -279,7 +281,8 @@ class VideoEditor:
         self.fps = self.info["fps"]
         self.start, self.end, self.pos = 0.0, self.dur, 0.0
         self.player: Player | None = None
-        self.pa = pyaudio.PyAudio()
+        with PA_LOCK:
+            self.pa = pyaudio.PyAudio()
         self._scrub: queue.Queue = queue.Queue()
         self._ui: queue.Queue = queue.Queue()
         self.grabber = FrameGrabber(self.path, (self.w, self.h), self._scrub)
@@ -632,5 +635,9 @@ class VideoEditor:
         self.grabber.close()
         self.win.after_cancel(self._tick_id)
         self.win.destroy()
-        threading.Thread(target=self.pa.terminate, daemon=True).start()
+        def terminate():
+            with PA_LOCK:
+                self.pa.terminate()
+
+        threading.Thread(target=terminate, daemon=True).start()
         self.on_done(result, volumes)
