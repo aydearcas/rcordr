@@ -102,6 +102,25 @@ python -m venv .venv
 
 No hace falta instalar ffmpeg: viene incluido con `imageio-ffmpeg`.
 
+## Empaquetar para enviar
+
+Genera `dist\rcordr-<versión>-windows.zip`: carpeta portable con `rcordr.exe` (no necesita
+Python) y el manual en PDF (estilo manual de videocámara de los 80–90).
+
+```powershell
+uv venv .venv-build --python 3.13 --python-preference only-managed
+uv pip install --python .venv-build\Scripts\python.exe --require-hashes -r scripts\requirements-build.txt
+.venv-build\Scripts\python.exe scripts\empaquetar.py
+```
+
+- Se compila con un Python gestionado por `uv` (no el de Microsoft Store) y PyInstaller.
+- `scripts\manual.py` genera solo el manual (`--solo-manual` en `empaquetar.py`).
+- El ejecutable no está firmado: la primera vez Windows SmartScreen pide «Ejecutar de todas formas».
+
+**Diagnóstico:** `rcordr.exe --selftest` (o `pythonw rcordr.pyw --selftest`) comprueba la
+ventana, ffmpeg y el audio grabando 2 s, y deja el resultado en
+`%USERPROFILE%\.rcordr\rcordr-selftest.log`.
+
 ## Seguridad y privacidad
 
 - Funciona sin permisos de administrador y **no usa la red**: no envía nada ni abre puertos.

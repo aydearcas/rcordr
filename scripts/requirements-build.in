@@ -1,0 +1,6 @@
+# Dependencias para empaquetar (scripts/empaquetar.py). Para fijarlas con hashes:
+#   uv pip compile scripts/requirements-build.in --generate-hashes --python-platform windows -o scripts/requirements-build.txt
+-r ../requirements.in
+pyinstaller
+reportlab
+pypdfium2  # vista previa del manual en PNG para revisarlo

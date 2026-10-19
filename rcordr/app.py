@@ -1,11 +1,13 @@
 """Aplicación: icono en la bandeja, atajos globales y coordinación."""
 
 import faulthandler
+import gc
 import os
 import queue
 import subprocess
 import sys
 import threading
+import time
 import tkinter as tk
 from datetime import datetime
 from pathlib import Path
@@ -342,8 +344,82 @@ def _setup_log():
     print(f"rcordr {__version__} · {datetime.now():%Y-%m-%d %H:%M:%S}")
 
 
+def selftest(quiet: bool = False) -> int:
+    """rcordr --selftest: comprueba que todo funciona (ventanas, ffmpeg, audio).
+
+    Graba 2 s de una esquina de la pantalla con las fuentes de audio
+    configuradas, comprueba el MP4 y lo borra. El resultado queda en
+    rcordr-selftest.log y, salvo con --quiet, en un mensaje.
+    """
+    from tkinter import messagebox
+
+    from .editor import probe
+    from .recorder import TEMP_DIR, ffmpeg_exe
+    from .screenshot import monitor_at
+
+    config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    path = config.DATA_DIR / "rcordr-selftest.log"
+    log = open(path, "w", encoding="utf-8", buffering=1)
+    sys.stdout = sys.stderr = log
+    faulthandler.enable(log, all_threads=True)
+    ok = True
+
+    def check(name, fn):
+        nonlocal ok
+        try:
+            print(f"[OK]    {name}: {fn()}")
+        except Exception as e:
+            ok = False
+            print(f"[FALLO] {name}: {e!r}")
+
+    print(f"rcordr {__version__} · {datetime.now():%Y-%m-%d %H:%M:%S} · "
+          f"{'ejecutable' if getattr(sys, 'frozen', False) else 'Python'}")
+    check("ffmpeg", ffmpeg_exe)
+
+    def window():
+        app = App()
+        app.root.update()
+        app.root.destroy()
+        del app
+        gc.collect()  # liberar Tk en este hilo y no en uno de los de audio
+        return "Tk y bandeja"
+    check("ventana", window)
+
+    def record():
+        cfg = config.load()
+        sources = [s for s, k in ((SYSTEM, "record_audio"), (MIC, "record_mic")) if cfg[k]]
+        mon = monitor_at(0, 0)
+        zone = {"left": mon["left"], "top": mon["top"], "width": 320, "height": 240}
+        rec = Recorder()
+        got = rec.start(zone, 30, sources, 1080)
+        time.sleep(2)
+        done, res = threading.Event(), {}
+        rec.stop(TEMP_DIR / "selftest", lambda p, e: (res.update(p=p, e=e), done.set()))
+        if not done.wait(30) or res["e"]:
+            raise RuntimeError(res.get("e") or "no terminó")
+        info = probe(res["p"])
+        res["p"].unlink(missing_ok=True)
+        missing = [s for s in sources if s not in got]
+        if missing:
+            raise RuntimeError(f"no se pudo abrir el audio: {missing}")
+        return (f"{info['width']}x{info['height']}, {info['duration']:.1f} s, "
+                f"audio pedido {sources} → grabado {got}")
+    check("grabación de 2 s", record)
+
+    print("RESULTADO:", "correcto" if ok else "con fallos")
+    if not quiet:
+        title = "rcordr · diagnóstico"
+        if ok:
+            messagebox.showinfo(title, "Todo funciona correctamente.")
+        else:
+            messagebox.showerror(title, f"Hay fallos. Detalles en:\n{path}")
+    return 0 if ok else 1
+
+
 def main():
     winapi.set_dpi_aware()
+    if "--selftest" in sys.argv:
+        sys.exit(selftest(quiet="--quiet" in sys.argv))
     if not winapi.single_instance(config.APP_NAME):
         # Ya está abierta: que muestre el aviso con los atajos
         winapi.ActivationEvent(config.APP_NAME).signal()
