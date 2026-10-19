@@ -26,7 +26,7 @@ from reportlab.platypus.tableofcontents import TableOfContents
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from rcordr import __version__  # noqa: E402
+from rcordr import __url__, __version__  # noqa: E402
 from rcordr.config import DEFAULTS  # noqa: E402
 
 MODEL = "RC-90"
@@ -766,6 +766,7 @@ def story():
         ["rcordr.exe", "El programa. Doble clic para abrirlo."],
         ["_internal", "Componentes necesarios (Python, ffmpeg, librerías). No los modifique."],
         ["Manual de instrucciones", "Este documento."],
+        ["licencias", "Licencia de rcordr (GPL v3) y de los componentes de terceros."],
     ], [0.35, 0.65])]))
 
     # 3. Nombre de las partes
@@ -1016,6 +1017,8 @@ def story():
         ["Espacio en disco", "Aprox. 125 MB"],
         ["Conexión a Internet", "No necesaria"],
         ["Versión", f"{__version__} (modelo {MODEL})"],
+        ["Licencia", "Software libre: GNU GPL v3 o posterior"],
+        ["Código fuente", __url__.removeprefix("https://")],
     ]
     t = Table([[Paragraph(a, CELL_B), Paragraph(b, CELL)] for a, b in spec],
               colWidths=[0.36 * CONTENT_W, 0.64 * CONTENT_W])
@@ -1034,6 +1037,11 @@ def story():
         Paragraph("El diseño y las especificaciones pueden cambiar sin previo aviso.",
                   ParagraphStyle("end", parent=SMALL, alignment=TA_CENTER, textColor=GREY,
                                  fontName="Body-Italic")),
+        Spacer(1, 6),
+        Paragraph("rcordr es software libre: puede redistribuirlo y modificarlo bajo los "
+                  "términos de la GNU GPL v3 o posterior. Se ofrece SIN NINGUNA GARANTÍA. "
+                  "Vea la carpeta <b>licencias</b> del paquete.",
+                  ParagraphStyle("lic", parent=SMALL, alignment=TA_CENTER, textColor=GREY)),
     ]))
     return s
 
