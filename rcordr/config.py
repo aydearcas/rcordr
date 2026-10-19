@@ -1,13 +1,15 @@
 """Configuración: rutas de salida y atajos de teclado."""
 
 import json
+import os
 from pathlib import Path
 
 APP_NAME = "rcordr"
 
 # Carpeta de datos del usuario (config.json y temporales). No se usa %APPDATA%
 # porque el Python de Microsoft Store lo virtualiza y ffmpeg no vería los archivos.
-DATA_DIR = Path.home() / f".{APP_NAME}"
+# RCORDR_DATA_DIR permite usar otra carpeta (pruebas) sin tocar la config real.
+DATA_DIR = Path(os.environ.get("RCORDR_DATA_DIR") or Path.home() / f".{APP_NAME}")
 TEMP_DIR = DATA_DIR / "tmp"
 
 DEFAULTS = {
@@ -16,6 +18,7 @@ DEFAULTS = {
     "hotkey_screenshot": "ctrl+shift+1",
     "hotkey_video": "ctrl+shift+2",
     "hotkey_audio": "ctrl+shift+3",
+    "hotkey_video_edit": "ctrl+shift+4",  # grabar y abrir el editor al terminar
     "screenshots_dir": str(Path.home() / "Pictures" / APP_NAME),
     "videos_dir": str(Path.home() / "Videos" / APP_NAME),
     "record_audio": True,
@@ -29,7 +32,10 @@ def load() -> dict:
     cfg = dict(DEFAULTS)
     path = DATA_DIR / "config.json"
     try:
-        cfg.update(json.loads(path.read_text(encoding="utf-8")))
+        saved = json.loads(path.read_text(encoding="utf-8"))
+        cfg.update(saved)
+        if DEFAULTS.keys() - saved.keys():
+            save(cfg)  # añade al archivo las opciones nuevas de esta versión
     except FileNotFoundError:
         save(cfg)
     except (OSError, ValueError):

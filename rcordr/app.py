@@ -12,6 +12,7 @@ import pystray
 from PIL import ImageTk
 
 from . import config, icon, ui, winapi
+from .editor import VideoEditor
 from .hotkeys import HotkeyListener
 from .recorder import Recorder, clean_temp
 from .screenshot import RegionSelector
@@ -35,6 +36,7 @@ class App:
         self.rec_frame: ui.RegionFrame | None = None
         self.selector: RegionSelector | None = None
         self.busy = False  # iniciando/parando grabación
+        self.edit_after = False  # abrir el editor al terminar la grabación
         self._calls: queue.Queue = queue.Queue()
         self.activation = winapi.ActivationEvent(config.APP_NAME)
 
@@ -65,6 +67,9 @@ class App:
                 lambda item: ("Detener grabación" if self.recorder.recording
                               else "Grabar vídeo") + f"\t{hk('hotkey_video')}",
                 lambda: self.call(self.toggle_video)),
+            pystray.MenuItem(f"Grabar vídeo y editar\t{hk('hotkey_video_edit')}",
+                             lambda: self.call(self.toggle_video, True),
+                             visible=lambda item: not self.recorder.recording),
             pystray.MenuItem(f"Grabar sonido del ordenador\t{hk('hotkey_audio')}",
                              lambda: self.call(self.toggle_audio),
                              checked=lambda item: self.cfg["record_audio"]),
@@ -116,15 +121,22 @@ class App:
             return None
 
     # --- Vídeo --------------------------------------------------------------
-    def toggle_video(self):
+    def toggle_video(self, edit: bool = False):
+        """Empieza (eligiendo zona) o detiene la grabación.
+
+        Con edit=True, al terminar se abre el editor en vez de guardar directamente.
+        Mientras se graba, cualquiera de los dos atajos la detiene.
+        """
         if self.busy:
             return
         if self.recorder.recording:
             self._stop_video()
         elif not self.selector:
+            self.edit_after = edit
+            what = "grabar y editar" if edit else "grabar"
             self.selector = RegionSelector(
                 self.root, self._on_video_zone, color=ui.RED,
-                hint="Elige la zona a grabar · Clic = pantalla completa · Esc = cancelar")
+                hint=f"Elige la zona a {what} · Clic = pantalla completa · Esc = cancelar")
 
     def _on_video_zone(self, image, zone):
         self.selector = None
@@ -154,7 +166,9 @@ class App:
         self.busy = False
         if not zone["full"]:
             self.rec_frame = ui.RegionFrame(self.stack, zone)
-        self.rec_panel = ui.RecordingPanel(self.stack, audio_ok, lambda: self.call(self.toggle_video))
+        self.rec_panel = ui.RecordingPanel(self.stack, audio_ok, lambda: self.call(self.toggle_video),
+                                           stop_text="■ Detener y editar" if self.edit_after
+                                           else "■ Detener")
         self.rec_panel.show()
         if wanted_audio and not audio_ok:
             ui.Toast(self.stack, "Grabando sin sonido",
@@ -183,6 +197,21 @@ class App:
         if err:
             self._failed("Error al guardar el vídeo", err)
             return
+        if self.edit_after:
+            try:
+                VideoEditor(self.root, path, self._edited)
+                return
+            except Exception as e:  # si el editor falla, el vídeo ya está guardado
+                ui.Toast(self.stack, "No se pudo abrir el editor", str(e)[:200]).show()
+        self._video_ready(path)
+
+    def _edited(self, path):
+        if path is None:
+            ui.Toast(self.stack, "Vídeo descartado", timeout=3).show()
+        else:
+            self._video_ready(path)
+
+    def _video_ready(self, path):
         size_mb = path.stat().st_size / 1_048_576
         copied = winapi.copy_file_to_clipboard(path)
         text = f"{path.name} · {size_mb:.1f} MB"
@@ -220,6 +249,7 @@ class App:
         hotkeys = HotkeyListener({
             self.cfg["hotkey_screenshot"]: lambda: self.call(self.screenshot),
             self.cfg["hotkey_video"]: lambda: self.call(self.toggle_video),
+            self.cfg["hotkey_video_edit"]: lambda: self.call(self.toggle_video, True),
             self.cfg["hotkey_audio"]: lambda: self.call(self.toggle_audio),
         })
         failed = hotkeys.start()
@@ -249,6 +279,7 @@ class App:
         ui.Toast(self.stack, f"rcordr {state}",
                  f"{c['hotkey_screenshot'].upper()}  captura de imagen\n"
                  f"{c['hotkey_video'].upper()}  grabar / detener vídeo\n"
+                 f"{c['hotkey_video_edit'].upper()}  grabar y editar\n"
                  f"{c['hotkey_audio'].upper()}  sonido on/off", timeout=6).show()
 
     def quit(self):

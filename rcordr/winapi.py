@@ -94,6 +94,18 @@ def exclude_from_capture(tk_window) -> None:
         pass
 
 
+def dark_title_bar(tk_window) -> None:
+    """Barra de título oscura (Windows 10 20H1+ / 11)."""
+    try:
+        tk_window.update_idletasks()
+        hwnd = user32.GetParent(tk_window.winfo_id()) or tk_window.winfo_id()
+        value = ctypes.c_int(1)
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(
+            wintypes.HWND(hwnd), 20, ctypes.byref(value), ctypes.sizeof(value))
+    except OSError:
+        pass
+
+
 def click_through(tk_window) -> None:
     """Hace que los clics atraviesen la ventana (y la quita de Alt+Tab)."""
     tk_window.update_idletasks()

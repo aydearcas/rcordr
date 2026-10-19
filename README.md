@@ -11,6 +11,21 @@ junto al reloj, y todo se maneja con atajos de teclado.
 | `Ctrl+Shift+1` | **Captura de imagen**: la pantalla se congela; arrastra para seleccionar (clic simple = pantalla completa, `Esc`/clic derecho = cancelar). Se copia al portapapeles y aparece un botón flotante **Guardar** (PNG). |
 | `Ctrl+Shift+2` | **Grabar vídeo**: arrastra para elegir la zona (clic simple = pantalla completa, `Esc` = cancelar). La zona queda rodeada por un marco rojo y abajo a la derecha aparece `● REC 00:12` con botón *Detener* (ninguno de los dos sale en el vídeo). Vuelve a pulsarlo para **detener**. |
 | `Ctrl+Shift+3` | Activar/desactivar el **sonido del ordenador** en las grabaciones. |
+| `Ctrl+Shift+4` | **Grabar vídeo y editar**: igual que `Ctrl+Shift+2`, pero al detener se abre el editor. |
+
+### Editor de vídeo
+
+Ventana flotante con vista previa (con sonido) y una línea de tiempo:
+
+- Arrastra los **extremos azules** para elegir dónde empieza y dónde acaba el vídeo
+  (o pulsa `I` / `O` para marcar inicio / fin en la posición actual).
+- `Espacio` o clic en la imagen: reproducir / pausa. Clic en la barra: ir a ese punto.
+- **Quitar audio**: el vídeo se guarda sin sonido.
+- **Guardar** sustituye la grabación por la versión editada. **Descartar** (dos clics)
+  borra la grabación. Cerrar la ventana conserva el vídeo sin cambios.
+
+Recortar recodifica el tramo (corte exacto al fotograma; tarda unos segundos y se ve el
+porcentaje). Quitar solo el audio es instantáneo.
 
 Al terminar un vídeo se guarda como `.mp4` y **se copia al portapapeles como archivo**:
 en WhatsApp Desktop/Web basta con `Ctrl+V` en el chat.

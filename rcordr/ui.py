@@ -15,6 +15,13 @@ RED = "#e5383b"
 FONT = "Segoe UI"
 
 
+def make_button(parent, text, command, color, px):
+    b = tk.Label(parent, text=text, bg=color, fg="white", cursor="hand2",
+                 font=(FONT, 10, "bold"), padx=px(14), pady=px(5))
+    b.bind("<Button-1>", lambda e: command())
+    return b
+
+
 class Stack:
     """Apila los paneles desde la esquina inferior derecha hacia arriba."""
 
@@ -99,11 +106,7 @@ class Panel:
                         font=(FONT, size, "bold" if bold else "normal"), **kw)
 
     def button(self, parent, text, command, color=ACCENT):
-        px = self.stack.px
-        b = tk.Label(parent, text=text, bg=color, fg="white", cursor="hand2",
-                     font=(FONT, 10, "bold"), padx=px(14), pady=px(5))
-        b.bind("<Button-1>", lambda e: command())
-        return b
+        return make_button(parent, text, command, color, self.stack.px)
 
     def close_x(self, parent):
         x = tk.Label(parent, text="✕", bg=BG, fg=MUTED, cursor="hand2", font=(FONT, 10))
@@ -144,7 +147,7 @@ class SavePanel(Panel):
 class RecordingPanel(Panel):
     """Indicador mientras se graba: ● REC 00:12  [Detener]."""
 
-    def __init__(self, stack: Stack, with_audio: bool, on_stop):
+    def __init__(self, stack: Stack, with_audio: bool, on_stop, stop_text="■ Detener"):
         super().__init__(stack, timeout=None)
         px = stack.px
         self.t0 = time.monotonic()
@@ -154,7 +157,7 @@ class RecordingPanel(Panel):
         self.time.grid(row=0, column=1, padx=(px(4), px(10)))
         self.label(self.body, "🔊" if with_audio else "🔇", MUTED, 10).grid(
             row=0, column=2, padx=(0, px(10)))
-        self.stop_btn = self.button(self.body, "■ Detener", on_stop, RED)
+        self.stop_btn = self.button(self.body, stop_text, on_stop, RED)
         self.stop_btn.grid(row=0, column=3)
         self._tick()
 
