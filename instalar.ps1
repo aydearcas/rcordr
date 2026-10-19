@@ -1,4 +1,4 @@
-# Instala rcordr: crea el entorno virtual, instala dependencias y crea accesos directos.
+﻿# Instala rcordr: crea el entorno virtual, instala dependencias y crea accesos directos.
 #   powershell -ExecutionPolicy Bypass -File instalar.ps1            -> menú Inicio
 #   powershell -ExecutionPolicy Bypass -File instalar.ps1 -Inicio    -> además, arrancar con Windows
 param([switch]$Inicio)
