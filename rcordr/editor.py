@@ -26,7 +26,11 @@ SELECTED = "#24527f"
 
 
 def probe(path: Path) -> dict:
-    """Duración, tamaño, fps y si tiene audio (leyendo la salida de ffmpeg -i)."""
+    """Duración, tamaño, fps y pistas de audio (leyendo la salida de ffmpeg -i).
+
+    "tracks" lista el origen de cada pista de audio según su handler_name
+    ("system", "mic"), que pone el grabador; otra cosa si es desconocido.
+    """
     r = subprocess.run([ffmpeg_exe(), "-hide_banner", "-i", str(path)],
                        capture_output=True, creationflags=CREATE_NO_WINDOW)
     text = r.stderr.decode("utf-8", "replace")
@@ -35,12 +39,32 @@ def probe(path: Path) -> dict:
     if not dur or not size:
         raise RuntimeError("No se pudo leer el vídeo.")
     fps = re.search(r"(\d+(?:\.\d+)?) fps", text)
+    tracks, in_audio = [], False
+    for line in text.splitlines():
+        if "Stream #" in line:
+            in_audio = "Audio:" in line
+            if in_audio:
+                tracks.append("audio")
+        elif in_audio and (m := re.match(r"\s*handler_name\s*:\s*(\S+)", line)):
+            tracks[-1] = m[1]
     return {
         "duration": int(dur[1]) * 3600 + int(dur[2]) * 60 + float(dur[3]),
         "width": int(size[1]), "height": int(size[2]),
         "fps": float(fps[1]) if fps else 30.0,
-        "has_audio": "Audio:" in text,
+        "tracks": tracks,
     }
+
+
+def mix_args(gains: list[float]) -> list[str]:
+    """Argumentos de ffmpeg que mezclan las pistas de audio con esos volúmenes."""
+    parts = [f"[0:a:{i}]volume={g:.2f}[a{i}]" for i, g in enumerate(gains)]
+    if len(gains) > 1:
+        parts.append("".join(f"[a{i}]" for i in range(len(gains)))
+                     + f"amix=inputs={len(gains)}:duration=longest:normalize=0[a]")
+        out = "[a]"
+    else:
+        out = "[a0]"
+    return ["-filter_complex", ";".join(parts), "-map", out]
 
 
 def _ffmpeg(args, **kw) -> subprocess.Popen:
@@ -63,15 +87,16 @@ class Player:
         self.eof = False
         self.wall0 = None
 
-    def start(self, t0: float, t1: float, with_audio: bool):
+    def start(self, t0: float, t1: float, gains: list[float] | None):
+        """gains: volumen de cada pista de audio, o None para reproducir sin sonido."""
         self.t0, self.t1 = t0, t1
         cut = ["-ss", f"{t0:.3f}", "-i", str(self.path), "-t", f"{t1 - t0:.3f}"]
         video = _ffmpeg([*cut, "-an", "-vf", f"fps={self.fps},scale={self.w}:{self.h}",
                          "-f", "rawvideo", "-pix_fmt", "rgb24", "-"])
         self._procs.append(video)
         threading.Thread(target=self._read_video, args=(video,), daemon=True).start()
-        if with_audio:
-            audio = _ffmpeg([*cut, "-vn", "-f", "s16le", "-ac", "2",
+        if gains:
+            audio = _ffmpeg([*cut, *mix_args(gains), "-f", "s16le", "-ac", "2",
                              "-ar", str(AUDIO_RATE), "-"])
             self._procs.append(audio)
             self._audio_thread = threading.Thread(target=self._play_audio, args=(audio,),
@@ -194,17 +219,20 @@ class FrameGrabber(threading.Thread):
 
 
 def export(src: Path, dst: Path, start: float, end: float, trimmed: bool,
-           keep_audio: bool, on_progress) -> None:
-    """Escribe dst con el tramo elegido. Recodifica solo si hay recorte."""
+           gains: list[float] | None, on_progress) -> None:
+    """Escribe dst con el tramo elegido y el audio mezclado en una sola pista.
+
+    El vídeo solo se recodifica si hay recorte; gains=None quita el audio.
+    """
     args = [ffmpeg_exe(), "-v", "error", "-y", "-nostats", "-progress", "pipe:1"]
     if trimmed:  # recodificar para cortar justo en el fotograma elegido
         args += ["-ss", f"{start:.3f}", "-i", str(src), "-t", f"{end - start:.3f}",
                  "-map", "0:v:0", "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
                  "-pix_fmt", "yuv420p"]
-    else:        # solo quitar el audio: copia directa, instantánea
+    else:        # sin recorte: el vídeo se copia tal cual, es instantáneo
         args += ["-i", str(src), "-map", "0:v:0", "-c:v", "copy"]
-    if keep_audio:
-        args += ["-map", "0:a:0?", "-c:a", "aac", "-b:a", "160k"]
+    if gains:    # WhatsApp solo reproduce la primera pista: todo en una
+        args += [*mix_args(gains), "-c:a", "aac", "-b:a", "160k"]
     args += ["-movflags", "+faststart", str(dst)]
 
     p = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -223,15 +251,22 @@ def _fmt(t: float) -> str:
     return f"{int(t // 60):02d}:{t % 60:04.1f}"
 
 
-class VideoEditor:
-    """Ventana flotante: vista previa, recorte con dos tiradores y quitar audio.
+TRACK_LABELS = {"system": "🔊 Ordenador", "mic": "🎤 Micrófono"}
 
-    on_done(path) al guardar o cerrar (vídeo final), on_done(None) al descartar.
+
+class VideoEditor:
+    """Ventana flotante: vista previa, recorte, volumen de cada pista y quitar audio.
+
+    on_done(path, volúmenes) al guardar o cerrar (vídeo final);
+    on_done(None, None) al descartar. `volumes` ({"system": 1.0, "mic": 1.0})
+    son los volúmenes iniciales del mezclador.
     """
 
-    def __init__(self, root: tk.Tk, path: Path, on_done):
+    def __init__(self, root: tk.Tk, path: Path, on_done, volumes: dict | None = None):
         self.root, self.path, self.on_done = root, Path(path), on_done
         self.info = probe(self.path)
+        self.tracks = self.info["tracks"]
+        self.initial = [(volumes or {}).get(t, 1.0) for t in self.tracks]
         scale = root.winfo_fpixels("1i") / 96
         self.px = px = lambda n: int(n * scale)  # noqa: E731
 
@@ -293,17 +328,43 @@ class VideoEditor:
         self.time_lbl = tk.Label(body, bg=ui.BG, fg=ui.MUTED, font=(ui.FONT, 10))
         self.time_lbl.grid(row=2, column=4, columnspan=2, sticky="e")
 
+        # Mezclador: un deslizador de volumen (0–200 %) por pista de audio
+        self.gain_vars, self.scales = [], []
+        if self.tracks:
+            mixer = tk.Frame(body, bg=ui.BG)
+            mixer.grid(row=3, column=0, columnspan=6, sticky="w", pady=(px(8), 0))
+            for i, (track, g) in enumerate(zip(self.tracks, self.initial)):
+                name = TRACK_LABELS.get(track, "🔊 Audio")
+                tk.Label(mixer, text=name, bg=ui.BG, fg=ui.FG, font=(ui.FONT, 10)).grid(
+                    row=0, column=i * 3, padx=(px(18) if i else 0, px(6)))
+                var = tk.IntVar(value=int(round(g * 100)))
+                pct = tk.Label(mixer, text=f"{var.get()} %", width=5, anchor="w",
+                               bg=ui.BG, fg=ui.MUTED, font=(ui.FONT, 10))
+                scale = tk.Scale(
+                    mixer, from_=0, to=200, resolution=5, orient="horizontal",
+                    variable=var, showvalue=False, length=px(130), width=px(10),
+                    # en tk.Scale "bg" es el color del tirador
+                    sliderlength=px(16), bg="#d6d6de", troughcolor="#3a3a42", fg=ui.FG,
+                    activebackground=ui.ACCENT, highlightthickness=0, bd=0,
+                    sliderrelief="flat", cursor="sb_h_double_arrow",
+                    command=lambda v, lbl=pct: lbl.configure(text=f"{int(float(v))} %"))
+                scale.bind("<ButtonRelease-1>", lambda e: self._restart_audio())
+                scale.grid(row=0, column=i * 3 + 1)
+                pct.grid(row=0, column=i * 3 + 2, padx=(px(6), 0))
+                self.gain_vars.append(var)
+                self.scales.append(scale)
+
         row = tk.Frame(body, bg=ui.BG)
-        row.grid(row=3, column=0, columnspan=6, sticky="ew", pady=(px(10), 0))
+        row.grid(row=4, column=0, columnspan=6, sticky="ew", pady=(px(10), 0))
         self.play_btn = ui.make_button(row, "▶  Reproducir", self.toggle_play, "#3a3a42", px)
         self.play_btn.pack(side="left")
 
-        self.mute = tk.BooleanVar(value=not self.info["has_audio"])
+        self.mute = tk.BooleanVar(value=not self.tracks)
         self.mute_chk = tk.Checkbutton(
             row, text="Quitar audio", variable=self.mute, command=self._mute_changed,
             bg=ui.BG, fg=ui.FG, selectcolor=ui.BG, activebackground=ui.BG,
             activeforeground=ui.FG, font=(ui.FONT, 10), cursor="hand2")
-        if not self.info["has_audio"]:
+        if not self.tracks:
             self.mute_chk.configure(text="Sin audio", state="disabled")
         self.mute_chk.pack(side="left", padx=(px(14), 0))
 
@@ -316,7 +377,7 @@ class VideoEditor:
             body, bg=ui.BG, fg=ui.MUTED, font=(ui.FONT, 9),
             text="Arrastra los extremos azules para recortar · Espacio: reproducir/pausa"
                  " · I / O: inicio / fin en la posición actual")
-        self.hint.grid(row=4, column=0, columnspan=6, sticky="w", pady=(px(8), 0))
+        self.hint.grid(row=5, column=0, columnspan=6, sticky="w", pady=(px(8), 0))
 
         win.bind("<space>", lambda e: self.toggle_play())
         win.bind("<KeyPress-i>", lambda e: self._set_start(self.pos))
@@ -431,8 +492,14 @@ class VideoEditor:
         if not (self.start <= self.pos < self.end - 0.05):
             self.pos = self.start
         self.player = Player(self.path, self.fps, (self.w, self.h), self.pa)
-        self.player.start(self.pos, self.end, with_audio=not self.mute.get())
+        self.player.start(self.pos, self.end, self._gains())
         self.play_btn.configure(text="⏸  Pausa")
+
+    def _gains(self) -> list[float] | None:
+        """Volumen de cada pista según el mezclador, o None si se quita el audio."""
+        if not self.tracks or self.mute.get():
+            return None
+        return [v.get() / 100 for v in self.gain_vars]
 
     def pause(self):
         if not self.player:
@@ -444,7 +511,12 @@ class VideoEditor:
         self._move_playhead()
 
     def _mute_changed(self):
-        if self.player:  # aplica el cambio al momento
+        for scale in self.scales:
+            scale.configure(state="disabled" if self.mute.get() else "normal")
+        self._restart_audio()
+
+    def _restart_audio(self):
+        if self.player:  # aplica el cambio de sonido al momento
             self.pause()
             self.play()
 
@@ -482,13 +554,24 @@ class VideoEditor:
 
     # --- Guardar / descartar ------------------------------------------------
     def _save(self):
-        if self._exporting:
-            return
-        self.pause()
-        trimmed = self.start > 0.05 or self.end < self.dur - 0.05
-        drop_audio = self.info["has_audio"] and self.mute.get()
-        if not trimmed and not drop_audio:
-            self._finish(self.path)  # sin cambios
+        if not self._exporting:
+            self.pause()
+            self._export(self.start, self.end, self._gains())
+
+    def _close(self):
+        """Cerrar = conservar el vídeo entero, con el audio mezclado como al principio."""
+        if not self._exporting:
+            self.pause()
+            self._export(0.0, self.dur, self.initial or None, remember=False)
+
+    def _export(self, start, end, gains, remember=True):
+        trimmed = start > 0.05 or end < self.dur - 0.05
+        volumes = dict(zip(self.tracks, gains)) if (gains and remember) else None
+        drop_audio = bool(self.tracks) and gains is None
+        unchanged = (not trimmed and not drop_audio and len(self.tracks) <= 1
+                     and all(g == 1.0 for g in gains or []))
+        if unchanged:  # una sola pista (o ninguna) al 100 %: nada que procesar
+            self._finish(self.path, volumes)
             return
 
         self._exporting = True
@@ -502,10 +585,9 @@ class VideoEditor:
 
         def work():
             try:
-                export(self.path, tmp, self.start, self.end, trimmed,
-                       keep_audio=not drop_audio, on_progress=progress)
+                export(self.path, tmp, start, end, trimmed, gains, on_progress=progress)
                 os.replace(tmp, self.path)
-                self._ui.put(lambda: self._finish(self.path))
+                self._ui.put(lambda: self._finish(self.path, volumes))
             except Exception as e:
                 tmp.unlink(missing_ok=True)
                 self._ui.put(lambda: self._export_failed(e))
@@ -542,11 +624,7 @@ class VideoEditor:
         self._confirm_discard = None
         self.discard_btn.configure(text="Descartar", bg="#3a3a42")
 
-    def _close(self):
-        if not self._exporting:
-            self._finish(self.path)  # cerrar = conservar el vídeo tal cual
-
-    def _finish(self, result):
+    def _finish(self, result, volumes=None):
         if self._closed:
             return
         self._closed = True
@@ -555,4 +633,4 @@ class VideoEditor:
         self.win.after_cancel(self._tick_id)
         self.win.destroy()
         threading.Thread(target=self.pa.terminate, daemon=True).start()
-        self.on_done(result)
+        self.on_done(result, volumes)

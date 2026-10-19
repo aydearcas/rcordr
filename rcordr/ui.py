@@ -147,7 +147,7 @@ class SavePanel(Panel):
 class RecordingPanel(Panel):
     """Indicador mientras se graba: ● REC 00:12  [Detener]."""
 
-    def __init__(self, stack: Stack, with_audio: bool, on_stop, stop_text="■ Detener"):
+    def __init__(self, stack: Stack, sources: list[str], on_stop, stop_text="■ Detener"):
         super().__init__(stack, timeout=None)
         px = stack.px
         self.t0 = time.monotonic()
@@ -155,7 +155,8 @@ class RecordingPanel(Panel):
         self.dot.grid(row=0, column=0)
         self.time = self.label(self.body, "REC 00:00", bold=True)
         self.time.grid(row=0, column=1, padx=(px(4), px(10)))
-        self.label(self.body, "🔊" if with_audio else "🔇", MUTED, 10).grid(
+        icons = ("🔊" if "system" in sources else "") + ("🎤" if "mic" in sources else "")
+        self.label(self.body, icons or "🔇", MUTED, 10).grid(
             row=0, column=2, padx=(0, px(10)))
         self.stop_btn = self.button(self.body, stop_text, on_stop, RED)
         self.stop_btn.grid(row=0, column=3)

@@ -17,11 +17,14 @@ DEFAULTS = {
     # Modificadores válidos: ctrl, shift, alt, win.
     "hotkey_screenshot": "ctrl+shift+1",
     "hotkey_video": "ctrl+shift+2",
-    "hotkey_audio": "ctrl+shift+3",
-    "hotkey_video_edit": "ctrl+shift+4",  # grabar y abrir el editor al terminar
+    "hotkey_video_edit": "ctrl+shift+3",  # grabar y abrir el editor al terminar
     "screenshots_dir": str(Path.home() / "Pictures" / APP_NAME),
     "videos_dir": str(Path.home() / "Videos" / APP_NAME),
-    "record_audio": True,
+    "record_audio": True,   # sonido del ordenador
+    "record_mic": False,    # micrófono (entrada predeterminada de Windows)
+    # Volúmenes de la mezcla (1.0 = 100 %). Los ajusta el editor al guardar.
+    "volume_system": 1.0,
+    "volume_mic": 1.0,
     "fps": 30,
     # Altura máxima del vídeo final (se reduce si la pantalla es mayor).
     "max_video_height": 1080,
@@ -34,7 +37,14 @@ def load() -> dict:
     try:
         saved = json.loads(path.read_text(encoding="utf-8"))
         cfg.update(saved)
-        if DEFAULTS.keys() - saved.keys():
+        if "hotkey_audio" in cfg:
+            # Versión anterior: Ctrl+Shift+3 era sonido on/off y 4 grabar y editar.
+            # El sonido pasó al menú Configuración y grabar y editar ocupa su atajo.
+            old = cfg.pop("hotkey_audio")
+            if cfg.get("hotkey_video_edit") == "ctrl+shift+4":
+                cfg["hotkey_video_edit"] = old
+            save(cfg)
+        elif DEFAULTS.keys() - saved.keys():
             save(cfg)  # añade al archivo las opciones nuevas de esta versión
     except FileNotFoundError:
         save(cfg)

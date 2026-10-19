@@ -14,10 +14,11 @@ from PIL import ImageTk
 from . import config, icon, ui, winapi
 from .editor import VideoEditor
 from .hotkeys import HotkeyListener
-from .recorder import Recorder, clean_temp
+from .recorder import MIC, SYSTEM, Recorder, clean_temp
 from .screenshot import RegionSelector
 
 MIN_VIDEO = 32  # lado mínimo (px) de la zona de vídeo
+SOURCE_NAMES = {SYSTEM: "sonido del ordenador", MIC: "micrófono"}
 
 
 class App:
@@ -70,16 +71,22 @@ class App:
             pystray.MenuItem(f"Grabar vídeo y editar\t{hk('hotkey_video_edit')}",
                              lambda: self.call(self.toggle_video, True),
                              visible=lambda item: not self.recorder.recording),
-            pystray.MenuItem(f"Grabar sonido del ordenador\t{hk('hotkey_audio')}",
-                             lambda: self.call(self.toggle_audio),
-                             checked=lambda item: self.cfg["record_audio"]),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Abrir carpeta de capturas",
                              lambda: _open_dir(self.cfg["screenshots_dir"])),
             pystray.MenuItem("Abrir carpeta de vídeos",
                              lambda: _open_dir(self.cfg["videos_dir"])),
-            pystray.MenuItem("Editar atajos (config.json)",
-                             lambda: os.startfile(config.DATA_DIR / "config.json")),
+            pystray.MenuItem("Configuración", pystray.Menu(
+                pystray.MenuItem("Grabar sonido del ordenador",
+                                 lambda: self.call(self.toggle_option, "record_audio"),
+                                 checked=lambda item: self.cfg["record_audio"]),
+                pystray.MenuItem("Grabar micrófono",
+                                 lambda: self.call(self.toggle_option, "record_mic"),
+                                 checked=lambda item: self.cfg["record_mic"]),
+                pystray.Menu.SEPARATOR,
+                pystray.MenuItem("Editar atajos y carpetas (config.json)",
+                                 lambda: os.startfile(config.DATA_DIR / "config.json")),
+            )),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Salir", lambda: self.call(self.quit)),
         )
@@ -150,29 +157,31 @@ class App:
 
     def _start_video(self, zone):
         self.busy = True
-        with_audio = self.cfg["record_audio"]
+        wanted = [src for src, key in ((SYSTEM, "record_audio"), (MIC, "record_mic"))
+                  if self.cfg[key]]
 
         def work():
             try:
-                audio_ok = self.recorder.start(zone, int(self.cfg["fps"]), with_audio,
-                                               int(self.cfg["max_video_height"]))
-                self.call(self._started, zone, with_audio, audio_ok)
+                got = self.recorder.start(zone, int(self.cfg["fps"]), wanted,
+                                          int(self.cfg["max_video_height"]))
+                self.call(self._started, zone, wanted, got)
             except Exception as e:
                 self.call(self._failed, "No se pudo iniciar la grabación", e)
 
         threading.Thread(target=work, daemon=True).start()
 
-    def _started(self, zone, wanted_audio, audio_ok):
+    def _started(self, zone, wanted, got):
         self.busy = False
         if not zone["full"]:
             self.rec_frame = ui.RegionFrame(self.stack, zone)
-        self.rec_panel = ui.RecordingPanel(self.stack, audio_ok, lambda: self.call(self.toggle_video),
+        self.rec_panel = ui.RecordingPanel(self.stack, got, lambda: self.call(self.toggle_video),
                                            stop_text="■ Detener y editar" if self.edit_after
                                            else "■ Detener")
         self.rec_panel.show()
-        if wanted_audio and not audio_ok:
-            ui.Toast(self.stack, "Grabando sin sonido",
-                     "No se encontró la salida de audio del ordenador.").show()
+        missing = [SOURCE_NAMES[src] for src in wanted if src not in got]
+        if missing:
+            ui.Toast(self.stack, "Grabando sin " + " ni ".join(missing),
+                     "No se pudo abrir el dispositivo de audio.").show()
         self.tray.title = "rcordr — grabando"
         self.tray.update_menu()
         self._blink_tray()
@@ -184,8 +193,11 @@ class App:
             self.rec_frame = None
         if self.rec_panel:
             self.rec_panel.processing()
+        # Para editar, cada fuente en su pista (el editor ajusta los volúmenes);
+        # si no, se mezclan ya con los volúmenes guardados.
         self.recorder.stop(Path(self.cfg["videos_dir"]),
-                           lambda path, err: self.call(self._stopped, path, err))
+                           lambda path, err: self.call(self._stopped, path, err),
+                           separate=self.edit_after, volumes=self._volumes())
         self.tray.title = "rcordr"
         self.tray.update_menu()
 
@@ -199,13 +211,20 @@ class App:
             return
         if self.edit_after:
             try:
-                VideoEditor(self.root, path, self._edited)
+                VideoEditor(self.root, path, self._edited, self._volumes())
                 return
             except Exception as e:  # si el editor falla, el vídeo ya está guardado
                 ui.Toast(self.stack, "No se pudo abrir el editor", str(e)[:200]).show()
         self._video_ready(path)
 
-    def _edited(self, path):
+    def _volumes(self) -> dict[str, float]:
+        return {SYSTEM: float(self.cfg["volume_system"]), MIC: float(self.cfg["volume_mic"])}
+
+    def _edited(self, path, volumes):
+        if volumes:  # recordar la mezcla elegida para las próximas grabaciones
+            self.cfg["volume_system"] = volumes.get(SYSTEM, self.cfg["volume_system"])
+            self.cfg["volume_mic"] = volumes.get(MIC, self.cfg["volume_mic"])
+            config.save(self.cfg)
         if path is None:
             ui.Toast(self.stack, "Vídeo descartado", timeout=3).show()
         else:
@@ -224,14 +243,13 @@ class App:
         self.busy = False
         ui.Toast(self.stack, title, str(err)[:400], timeout=10).show()
 
-    # --- Sonido -------------------------------------------------------------
-    def toggle_audio(self):
-        self.cfg["record_audio"] = not self.cfg["record_audio"]
+    # --- Configuración ------------------------------------------------------
+    def toggle_option(self, key):
+        self.cfg[key] = not self.cfg[key]
         config.save(self.cfg)
         self.tray.update_menu()
-        state = "activado" if self.cfg["record_audio"] else "desactivado"
-        note = "Se aplicará en la próxima grabación." if self.recorder.recording else ""
-        ui.Toast(self.stack, f"Sonido del ordenador {state}", note, timeout=3).show()
+        if self.recorder.recording:
+            ui.Toast(self.stack, "Se aplicará en la próxima grabación", timeout=3).show()
 
     # --- Ciclo de vida ------------------------------------------------------
     def run(self):
@@ -250,7 +268,6 @@ class App:
             self.cfg["hotkey_screenshot"]: lambda: self.call(self.screenshot),
             self.cfg["hotkey_video"]: lambda: self.call(self.toggle_video),
             self.cfg["hotkey_video_edit"]: lambda: self.call(self.toggle_video, True),
-            self.cfg["hotkey_audio"]: lambda: self.call(self.toggle_audio),
         })
         failed = hotkeys.start()
         self.hotkeys = hotkeys
@@ -279,8 +296,7 @@ class App:
         ui.Toast(self.stack, f"rcordr {state}",
                  f"{c['hotkey_screenshot'].upper()}  captura de imagen\n"
                  f"{c['hotkey_video'].upper()}  grabar / detener vídeo\n"
-                 f"{c['hotkey_video_edit'].upper()}  grabar y editar\n"
-                 f"{c['hotkey_audio'].upper()}  sonido on/off", timeout=6).show()
+                 f"{c['hotkey_video_edit'].upper()}  grabar y editar", timeout=6).show()
 
     def quit(self):
         if self.recorder.recording:

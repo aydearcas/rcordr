@@ -10,8 +10,19 @@ junto al reloj, y todo se maneja con atajos de teclado.
 |---|---|
 | `Ctrl+Shift+1` | **Captura de imagen**: la pantalla se congela; arrastra para seleccionar (clic simple = pantalla completa, `Esc`/clic derecho = cancelar). Se copia al portapapeles y aparece un botón flotante **Guardar** (PNG). |
 | `Ctrl+Shift+2` | **Grabar vídeo**: arrastra para elegir la zona (clic simple = pantalla completa, `Esc` = cancelar). La zona queda rodeada por un marco rojo y abajo a la derecha aparece `● REC 00:12` con botón *Detener* (ninguno de los dos sale en el vídeo). Vuelve a pulsarlo para **detener**. |
-| `Ctrl+Shift+3` | Activar/desactivar el **sonido del ordenador** en las grabaciones. |
-| `Ctrl+Shift+4` | **Grabar vídeo y editar**: igual que `Ctrl+Shift+2`, pero al detener se abre el editor. |
+| `Ctrl+Shift+3` | **Grabar vídeo y editar**: igual que `Ctrl+Shift+2`, pero al detener se abre el editor. |
+
+### Sonido
+
+En el clic derecho del icono → **Configuración** se marca qué se graba:
+
+- **Grabar sonido del ordenador** (activado por defecto): lo que suena por los altavoces
+  o auriculares predeterminados.
+- **Grabar micrófono**: la entrada predeterminada de Windows (*Configuración de sonido →
+  Entrada*). Si están las dos, se mezclan en una sola pista.
+
+> Si el micrófono predeterminado son unos auriculares Bluetooth (AirPods, etc.), Windows
+> los pasa a modo «manos libres» mientras se graba y el sonido del ordenador baja de calidad.
 
 ### Editor de vídeo
 
@@ -20,12 +31,19 @@ Ventana flotante con vista previa (con sonido) y una línea de tiempo:
 - Arrastra los **extremos azules** para elegir dónde empieza y dónde acaba el vídeo
   (o pulsa `I` / `O` para marcar inicio / fin en la posición actual).
 - `Espacio` o clic en la imagen: reproducir / pausa. Clic en la barra: ir a ese punto.
+- **Mezclador**: un deslizador de volumen (0–200 %) para el ordenador y otro para el
+  micrófono; se escucha al momento en la vista previa. Los volúmenes elegidos se recuerdan
+  y se aplican también a las grabaciones con `Ctrl+Shift+2`.
 - **Quitar audio**: el vídeo se guarda sin sonido.
 - **Guardar** sustituye la grabación por la versión editada. **Descartar** (dos clics)
-  borra la grabación. Cerrar la ventana conserva el vídeo sin cambios.
+  borra la grabación. Cerrar la ventana conserva el vídeo entero con la mezcla inicial.
 
-Recortar recodifica el tramo (corte exacto al fotograma; tarda unos segundos y se ve el
-porcentaje). Quitar solo el audio es instantáneo.
+Al grabar para editar, el ordenador y el micrófono van en pistas separadas (ya
+sincronizadas), así que cambiar sus volúmenes no afecta a la sincronía. Al guardar se
+mezclan en una sola pista, que es la que reproduce WhatsApp.
+
+Recortar recodifica el vídeo (corte exacto al fotograma; tarda unos segundos y se ve el
+porcentaje). Sin recorte, el vídeo se copia tal cual y solo se procesa el audio.
 
 Al terminar un vídeo se guarda como `.mp4` y **se copia al portapapeles como archivo**:
 en WhatsApp Desktop/Web basta con `Ctrl+V` en el chat.
@@ -33,7 +51,7 @@ en WhatsApp Desktop/Web basta con `Ctrl+V` en el chat.
 - Capturas: `Imágenes\rcordr\captura_AAAAMMDD_HHMMSS.png`
 - Vídeos: `Vídeos\rcordr\video_AAAAMMDD_HHMMSS.mp4`
 
-Clic derecho en el icono de la bandeja: mismas acciones, abrir carpetas, editar atajos y salir.
+Clic derecho en el icono de la bandeja: mismas acciones, abrir carpetas, configuración y salir.
 Los atajos, carpetas y FPS se cambian en `%USERPROFILE%\.rcordr\config.json`
 (hay que reiniciar la app).
 
@@ -108,7 +126,8 @@ rcordr/
   app.py         bandeja (pystray) + bucle Tk + coordinación
   hotkeys.py     atajos globales con RegisterHotKey (Win32, sin admin)
   screenshot.py  overlay de selección sobre la pantalla congelada (mss + Tk)
-  recorder.py    vídeo con ffmpeg gdigrab + audio con WASAPI loopback (PyAudioWPatch)
+  recorder.py    vídeo con ffmpeg gdigrab + audio del ordenador (loopback) y micrófono
+  editor.py      editor: vista previa, recorte, mezclador de volumen, quitar audio
   ui.py          paneles flotantes: Guardar, indicador REC, avisos
   winapi.py      portapapeles, DPI, instancia única, ocultar ventanas en capturas
   icon.py        dibuja el icono (python -m rcordr.icon regenera assets/)
