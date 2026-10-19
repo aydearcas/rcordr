@@ -9,7 +9,7 @@ junto al reloj, y todo se maneja con atajos de teclado.
 | Atajo | Acción |
 |---|---|
 | `Ctrl+Shift+1` | **Captura de imagen**: la pantalla se congela; arrastra para seleccionar (clic simple = pantalla completa, `Esc`/clic derecho = cancelar). Se copia al portapapeles y aparece un botón flotante **Guardar** (PNG). |
-| `Ctrl+Shift+2` | **Grabar / detener vídeo** del monitor donde está el ratón. Abajo a la derecha aparece un indicador `● REC 00:12` con botón *Detener* (no sale en el vídeo). |
+| `Ctrl+Shift+2` | **Grabar vídeo**: arrastra para elegir la zona (clic simple = pantalla completa, `Esc` = cancelar). La zona queda rodeada por un marco rojo y abajo a la derecha aparece `● REC 00:12` con botón *Detener* (ninguno de los dos sale en el vídeo). Vuelve a pulsarlo para **detener**. |
 | `Ctrl+Shift+3` | Activar/desactivar el **sonido del ordenador** en las grabaciones. |
 
 Al terminar un vídeo se guarda como `.mp4` y **se copia al portapapeles como archivo**:

@@ -14,7 +14,9 @@ from PIL import ImageTk
 from . import config, icon, ui, winapi
 from .hotkeys import HotkeyListener
 from .recorder import Recorder, clean_temp
-from .screenshot import RegionSelector, monitor_under_cursor
+from .screenshot import RegionSelector
+
+MIN_VIDEO = 32  # lado mínimo (px) de la zona de vídeo
 
 
 class App:
@@ -30,6 +32,7 @@ class App:
         self.stack = ui.Stack(self.root)
         self.recorder = Recorder()
         self.rec_panel: ui.RecordingPanel | None = None
+        self.rec_frame: ui.RegionFrame | None = None
         self.selector: RegionSelector | None = None
         self.busy = False  # iniciando/parando grabación
         self._calls: queue.Queue = queue.Queue()
@@ -90,7 +93,7 @@ class App:
             return
         self.selector = RegionSelector(self.root, self._on_selected)
 
-    def _on_selected(self, image):
+    def _on_selected(self, image, zone):
         self.selector = None
         if image is None:
             return
@@ -117,26 +120,39 @@ class App:
             return
         if self.recorder.recording:
             self._stop_video()
-        else:
-            self._start_video()
+        elif not self.selector:
+            self.selector = RegionSelector(
+                self.root, self._on_video_zone, color=ui.RED,
+                hint="Elige la zona a grabar · Clic = pantalla completa · Esc = cancelar")
 
-    def _start_video(self):
+    def _on_video_zone(self, image, zone):
+        self.selector = None
+        if zone is None:
+            return
+        if zone["width"] < MIN_VIDEO or zone["height"] < MIN_VIDEO:
+            ui.Toast(self.stack, "Zona demasiado pequeña",
+                     f"Selecciona al menos {MIN_VIDEO} × {MIN_VIDEO} píxeles.").show()
+            return
+        self._start_video(zone)
+
+    def _start_video(self, zone):
         self.busy = True
-        rect = monitor_under_cursor()
         with_audio = self.cfg["record_audio"]
 
         def work():
             try:
-                audio_ok = self.recorder.start(rect, int(self.cfg["fps"]), with_audio,
+                audio_ok = self.recorder.start(zone, int(self.cfg["fps"]), with_audio,
                                                int(self.cfg["max_video_height"]))
-                self.call(self._started, with_audio, audio_ok)
+                self.call(self._started, zone, with_audio, audio_ok)
             except Exception as e:
                 self.call(self._failed, "No se pudo iniciar la grabación", e)
 
         threading.Thread(target=work, daemon=True).start()
 
-    def _started(self, wanted_audio, audio_ok):
+    def _started(self, zone, wanted_audio, audio_ok):
         self.busy = False
+        if not zone["full"]:
+            self.rec_frame = ui.RegionFrame(self.stack, zone)
         self.rec_panel = ui.RecordingPanel(self.stack, audio_ok, lambda: self.call(self.toggle_video))
         self.rec_panel.show()
         if wanted_audio and not audio_ok:
@@ -148,6 +164,9 @@ class App:
 
     def _stop_video(self):
         self.busy = True
+        if self.rec_frame:
+            self.rec_frame.close()
+            self.rec_frame = None
         if self.rec_panel:
             self.rec_panel.processing()
         self.recorder.stop(Path(self.cfg["videos_dir"]),

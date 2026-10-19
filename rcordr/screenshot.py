@@ -37,10 +37,14 @@ class RegionSelector:
     """Overlay a pantalla completa sobre una captura congelada.
 
     Arrastra para seleccionar, clic simple = monitor completo,
-    Esc o clic derecho = cancelar. Llama a on_done(imagen | None).
+    Esc o clic derecho = cancelar. Llama a on_done(imagen, zona), donde zona
+    es {"left", "top", "width", "height", "full"} en coordenadas de pantalla
+    ("full" = monitor completo). Al cancelar: on_done(None, None).
     """
 
-    def __init__(self, root: tk.Tk, on_done):
+    HINT = "Arrastra para seleccionar · Clic = pantalla completa · Esc = cancelar"
+
+    def __init__(self, root: tk.Tk, on_done, hint: str = HINT, color: str = "#3d9cff"):
         self.on_done = on_done
         self.image, self.ox, self.oy = grab_all()
         self.start = None
@@ -61,31 +65,30 @@ class RegionSelector:
         self._crop_tk = None
         self.canvas.create_image(0, 0, image=self._bg, anchor="nw")
         self.crop_item = self.canvas.create_image(0, 0, anchor="nw")
-        self.border = self.canvas.create_rectangle(0, 0, 0, 0, outline="#3d9cff",
+        self.border = self.canvas.create_rectangle(0, 0, 0, 0, outline=color,
                                                    width=2, state="hidden")
         self.label = self.canvas.create_text(0, 0, anchor="nw", fill="white",
                                              font=("Segoe UI", 10, "bold"),
                                              state="hidden")
-        self._hint()
+        self._hint(hint)
 
         self.canvas.bind("<ButtonPress-1>", self._press)
         self.canvas.bind("<B1-Motion>", self._drag)
         self.canvas.bind("<ButtonRelease-1>", self._release)
-        self.canvas.bind("<ButtonPress-3>", lambda e: self._finish(None))
-        self.win.bind("<Escape>", lambda e: self._finish(None))
+        self.canvas.bind("<ButtonPress-3>", lambda e: self._finish(None, None))
+        self.win.bind("<Escape>", lambda e: self._finish(None, None))
         self.win.after(10, self._focus)
 
     def _focus(self):
         self.win.lift()
         self.win.focus_force()
 
-    def _hint(self):
+    def _hint(self, text):
         mon = monitor_under_cursor()
         cx = mon["left"] - self.ox + mon["width"] // 2
         cy = mon["top"] - self.oy + 40
         self.hint = self.canvas.create_text(
-            cx, cy, fill="white", font=("Segoe UI", 12),
-            text="Arrastra para seleccionar · Clic = pantalla completa · Esc = cancelar")
+            cx, cy, fill="white", font=("Segoe UI", 12), text=text)
 
     def _press(self, e):
         self.start = (e.x, e.y)
@@ -95,7 +98,9 @@ class RegionSelector:
         if not self.start:
             return
         x0, y0 = self.start
-        self.rect = (min(x0, e.x), min(y0, e.y), max(x0, e.x), max(y0, e.y))
+        x = min(max(e.x, 0), self.image.width)
+        y = min(max(e.y, 0), self.image.height)
+        self.rect = (min(x0, x), min(y0, y), max(x0, x), max(y0, y))
         if not self._pending:  # limita los redibujados a uno por ciclo de eventos
             self._pending = True
             self.win.after_idle(self._redraw)
@@ -121,14 +126,17 @@ class RegionSelector:
         if not self.start:
             return
         x0, y0, x1, y1 = self.rect or (e.x, e.y, e.x, e.y)
-        if x1 - x0 < MIN_DRAG or y1 - y0 < MIN_DRAG:
+        full = x1 - x0 < MIN_DRAG or y1 - y0 < MIN_DRAG
+        if full:
             mon = monitor_at(e.x + self.ox, e.y + self.oy)
             l, t = mon["left"] - self.ox, mon["top"] - self.oy
             box = (l, t, l + mon["width"], t + mon["height"])
         else:
             box = (x0, y0, x1, y1)
-        self._finish(self.image.crop(box))
+        zone = {"left": box[0] + self.ox, "top": box[1] + self.oy,
+                "width": box[2] - box[0], "height": box[3] - box[1], "full": full}
+        self._finish(self.image.crop(box), zone)
 
-    def _finish(self, result):
+    def _finish(self, image, zone):
         self.win.destroy()
-        self.on_done(result)
+        self.on_done(image, zone)

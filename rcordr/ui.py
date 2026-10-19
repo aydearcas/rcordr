@@ -5,7 +5,7 @@ import tkinter as tk
 
 from PIL import ImageTk
 
-from .winapi import exclude_from_capture, work_area
+from .winapi import click_through, exclude_from_capture, work_area
 
 BG = "#1f1f23"
 FG = "#f2f2f2"
@@ -170,6 +170,41 @@ class RecordingPanel(Panel):
         self.time.configure(text="Procesando vídeo…")
         self.stop_btn.grid_remove()
         self.stack.relayout()
+
+
+class RegionFrame:
+    """Marco rojo alrededor de la zona que se está grabando.
+
+    Va por fuera de la zona, deja pasar los clics y no sale en capturas.
+    """
+
+    def __init__(self, stack: Stack, zone: dict):
+        t = max(2, stack.px(3))
+        x, y, w, h = zone["left"], zone["top"], zone["width"], zone["height"]
+        sides = [
+            (x - t, y - t, w + 2 * t, t),  # arriba
+            (x - t, y + h, w + 2 * t, t),  # abajo
+            (x - t, y, t, h),              # izquierda
+            (x + w, y, t, h),              # derecha
+        ]
+        self.wins = []
+        for sx, sy, sw, sh in sides:
+            win = tk.Toplevel(stack.root)
+            win.overrideredirect(True)
+            win.attributes("-topmost", True)
+            win.attributes("-alpha", 0.85)
+            win.configure(bg=RED)
+            win.geometry(f"{sw}x{sh}+{sx}+{sy}")
+            click_through(win)
+            exclude_from_capture(win)
+            self.wins.append(win)
+
+    def close(self):
+        for win in self.wins:
+            try:
+                win.destroy()
+            except tk.TclError:
+                pass
 
 
 class Toast(Panel):

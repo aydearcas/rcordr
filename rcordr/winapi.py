@@ -76,6 +76,16 @@ def exclude_from_capture(tk_window) -> None:
         pass
 
 
+def click_through(tk_window) -> None:
+    """Hace que los clics atraviesen la ventana (y la quita de Alt+Tab)."""
+    tk_window.update_idletasks()
+    hwnd = user32.GetParent(tk_window.winfo_id()) or tk_window.winfo_id()
+    GWL_EXSTYLE = -20
+    style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+    # WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW
+    user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style | 0x80000 | 0x20 | 0x80)
+
+
 def copy_image_to_clipboard(image) -> bool:
     """Copia una imagen PIL al portapapeles de Windows (formato CF_DIB)."""
     buf = io.BytesIO()
