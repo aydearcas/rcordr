@@ -1,7 +1,8 @@
 ﻿# Instala rcordr: crea el entorno virtual, instala dependencias y crea accesos directos.
 #   powershell -ExecutionPolicy Bypass -File instalar.ps1            -> menú Inicio
+#   powershell -ExecutionPolicy Bypass -File instalar.ps1 -Escritorio  -> además, icono en el escritorio
 #   powershell -ExecutionPolicy Bypass -File instalar.ps1 -Inicio    -> además, arrancar con Windows
-param([switch]$Inicio)
+param([switch]$Escritorio, [switch]$Inicio)
 
 $ErrorActionPreference = "Stop"
 $dir = $PSScriptRoot
@@ -28,6 +29,9 @@ function New-Shortcut($path) {
 }
 
 New-Shortcut (Join-Path ([Environment]::GetFolderPath("Programs")) "rcordr.lnk")
+if ($Escritorio) {
+    New-Shortcut (Join-Path ([Environment]::GetFolderPath("Desktop")) "rcordr.lnk")
+}
 if ($Inicio) {
     New-Shortcut (Join-Path ([Environment]::GetFolderPath("Startup")) "rcordr.lnk")
 }

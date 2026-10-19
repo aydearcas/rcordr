@@ -17,6 +17,10 @@ kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
 kernel32.GlobalFree.argtypes = [wintypes.HGLOBAL]
 kernel32.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
 kernel32.CreateMutexW.restype = wintypes.HANDLE
+kernel32.CreateEventW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.BOOL, wintypes.LPCWSTR]
+kernel32.CreateEventW.restype = wintypes.HANDLE
+kernel32.SetEvent.argtypes = [wintypes.HANDLE]
+kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
 user32.OpenClipboard.argtypes = [wintypes.HWND]
 user32.SetClipboardData.argtypes = [wintypes.UINT, wintypes.HANDLE]
 user32.SetClipboardData.restype = wintypes.HANDLE
@@ -64,6 +68,20 @@ def single_instance(name: str) -> bool:
     global _mutex
     _mutex = kernel32.CreateMutexW(None, False, f"Local\\{name}_single_instance")
     return ctypes.get_last_error() != ERROR_ALREADY_EXISTS
+
+
+class ActivationEvent:
+    """Evento con nombre para que una segunda instancia avise a la primera."""
+
+    def __init__(self, name: str):
+        # auto-reset, inicialmente no señalado
+        self.handle = kernel32.CreateEventW(None, False, False, f"Local\\{name}_activate")
+
+    def signal(self):
+        kernel32.SetEvent(self.handle)
+
+    def wait(self):
+        kernel32.WaitForSingleObject(self.handle, 0xFFFFFFFF)  # INFINITE
 
 
 def exclude_from_capture(tk_window) -> None:

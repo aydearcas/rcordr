@@ -36,6 +36,7 @@ class App:
         self.selector: RegionSelector | None = None
         self.busy = False  # iniciando/parando grabación
         self._calls: queue.Queue = queue.Queue()
+        self.activation = winapi.ActivationEvent(config.APP_NAME)
 
         self.tray = pystray.Icon("rcordr", self._icon_img, "rcordr", self._menu())
         self._blink = False
@@ -232,12 +233,23 @@ class App:
                      "Otra aplicación ya usa: " + ", ".join(failed).upper()
                      + ". Puedes cambiarlos en config.json.", timeout=10).show()
         else:
-            c = self.cfg
-            ui.Toast(self.stack, "rcordr está listo",
-                     f"{c['hotkey_screenshot'].upper()}  captura de imagen\n"
-                     f"{c['hotkey_video'].upper()}  grabar / detener vídeo\n"
-                     f"{c['hotkey_audio'].upper()}  sonido on/off", timeout=6).show()
+            self.show_ready()
+
+        def wait_activation():  # se abrió otra instancia (icono del escritorio/barra)
+            while True:
+                self.activation.wait()
+                self.call(self.show_ready)
+
+        threading.Thread(target=wait_activation, daemon=True, name="activation").start()
         self.root.mainloop()
+
+    def show_ready(self):
+        c = self.cfg
+        state = "grabando" if self.recorder.recording else "está listo"
+        ui.Toast(self.stack, f"rcordr {state}",
+                 f"{c['hotkey_screenshot'].upper()}  captura de imagen\n"
+                 f"{c['hotkey_video'].upper()}  grabar / detener vídeo\n"
+                 f"{c['hotkey_audio'].upper()}  sonido on/off", timeout=6).show()
 
     def quit(self):
         if self.recorder.recording:
@@ -261,5 +273,7 @@ def _open_dir(path):
 def main():
     winapi.set_dpi_aware()
     if not winapi.single_instance(config.APP_NAME):
+        # Ya está abierta: que muestre el aviso con los atajos
+        winapi.ActivationEvent(config.APP_NAME).signal()
         return
     App().run()

@@ -46,9 +46,18 @@ Límites de WhatsApp: hasta ~2 GB por vídeo (WhatsApp lo recomprime al enviarlo
 Requisitos: Windows 10 (2004+) u 11 y Python 3.10+.
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File instalar.ps1          # crea .venv + acceso en menú Inicio
-powershell -ExecutionPolicy Bypass -File instalar.ps1 -Inicio  # además, arrancar con Windows
+powershell -ExecutionPolicy Bypass -File instalar.ps1              # crea .venv + acceso en menú Inicio
+powershell -ExecutionPolicy Bypass -File instalar.ps1 -Escritorio  # además, icono en el escritorio
+powershell -ExecutionPolicy Bypass -File instalar.ps1 -Inicio      # además, arrancar con Windows
 ```
+
+Para anclarlo a la barra de tareas: clic derecho en el icono del escritorio (o en
+*rcordr* del menú Inicio) → *Mostrar más opciones* → **Anclar a la barra de tareas**.
+Si rcordr ya está abierto, pulsar el icono muestra el aviso con los atajos.
+
+Tras actualizar el código no hace falta reinstalar: basta con cerrar rcordr (*Salir*
+en la bandeja) y volver a abrirlo. Solo hay que repetir el instalador si cambia
+`requirements.txt`.
 
 O a mano:
 
