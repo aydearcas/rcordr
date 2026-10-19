@@ -71,7 +71,7 @@ No hace falta instalar ffmpeg: viene incluido con `imageio-ffmpeg`.
   `uv pip compile requirements.in --generate-hashes --python-platform windows -o requirements.txt`.
 - Siempre se usa el ffmpeg incluido en el paquete verificado; no se busca en el `PATH`
   ni se acepta `IMAGEIO_FFMPEG_EXE`.
-- Al arrancar se vacía `%USERPROFILE%\.rcordr	mp`. Si quedó un vídeo a medias por un cierre
+- Al arrancar se vacía `%USERPROFILE%\.rcordr\tmp`. Si quedó un vídeo a medias por un cierre
   inesperado, se recupera (sin sonido) como `video_recuperado_*.mp4` en la carpeta de vídeos.
 - Ten en cuenta que si tienes activado el historial del portapapeles (`Win+V`) o su
   sincronización, Windows guarda ahí las capturas. Y que el sonido del ordenador incluye
