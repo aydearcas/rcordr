@@ -13,7 +13,7 @@ from PIL import ImageTk
 
 from . import config, icon, ui, winapi
 from .hotkeys import HotkeyListener
-from .recorder import Recorder
+from .recorder import Recorder, clean_temp
 from .screenshot import RegionSelector, monitor_under_cursor
 
 
@@ -186,6 +186,17 @@ class App:
 
     # --- Ciclo de vida ------------------------------------------------------
     def run(self):
+        # Antes de activar los atajos, para no tocar una grabación nueva
+        try:
+            recovered = clean_temp(Path(self.cfg["videos_dir"]))
+        except Exception:
+            recovered = []
+        if recovered:
+            ui.Toast(self.stack, "Vídeo recuperado",
+                     "Se recuperó una grabación que quedó a medias (sin sonido).",
+                     action=("Abrir", lambda: ui._reveal(recovered[-1])),
+                     timeout=10).show()
+
         hotkeys = HotkeyListener({
             self.cfg["hotkey_screenshot"]: lambda: self.call(self.screenshot),
             self.cfg["hotkey_video"]: lambda: self.call(self.toggle_video),

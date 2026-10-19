@@ -7,7 +7,6 @@ fotograma que informa ffmpeg ("start: ...") y la del inicio del audio.
 """
 
 import re
-import shutil
 import subprocess
 import threading
 import time
@@ -22,11 +21,17 @@ CREATE_NO_WINDOW = 0x08000000
 
 
 def ffmpeg_exe() -> str:
-    exe = shutil.which("ffmpeg")
-    if exe:
-        return exe
+    """Ruta del ffmpeg incluido en imageio-ffmpeg (verificado por hash al instalar).
+
+    No se busca en el PATH ni se acepta la variable IMAGEIO_FFMPEG_EXE, para
+    que no se pueda sustituir por otro ejecutable.
+    """
     import imageio_ffmpeg
-    return imageio_ffmpeg.get_ffmpeg_exe()
+    binaries = Path(imageio_ffmpeg.__file__).parent / "binaries"
+    found = sorted(binaries.glob("ffmpeg-win*.exe"))
+    if not found:
+        raise RuntimeError(f"No se encontró ffmpeg en {binaries}")
+    return str(found[-1])
 
 
 class AudioCapture(threading.Thread):
@@ -161,6 +166,7 @@ class Recorder:
         if s.proc.poll() is not None:
             if s.audio:
                 s.audio.stop()
+            s.tmp_video.unlink(missing_ok=True)
             s.tmp_audio.unlink(missing_ok=True)
             raise RuntimeError(f"ffmpeg no pudo iniciar la grabación:\n{s.tail()}")
         self.session = s
@@ -194,6 +200,35 @@ class Recorder:
                 s.tmp_audio.unlink(missing_ok=True)
 
         threading.Thread(target=finish, daemon=True, name="mux").start()
+
+
+def clean_temp(out_dir: Path) -> list[Path]:
+    """Vacía la carpeta temporal (restos de un cierre inesperado).
+
+    Si queda un vídeo a medias no se pierde: se pasa a la carpeta de vídeos
+    como video_recuperado_*.mp4 (sin sonido). Devuelve los vídeos recuperados.
+    Llamar solo cuando no hay ninguna grabación en curso.
+    """
+    recovered = []
+    if not TEMP_DIR.exists():
+        return recovered
+    for mkv in sorted(TEMP_DIR.glob("*.mkv")):
+        if mkv.stat().st_size == 0:
+            continue
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out = out_dir / f"video_recuperado_{mkv.stem}.mp4"
+        r = subprocess.run(
+            [ffmpeg_exe(), "-hide_banner", "-y", "-i", str(mkv), "-c", "copy",
+             "-movflags", "+faststart", str(out)],
+            capture_output=True, creationflags=CREATE_NO_WINDOW)
+        if r.returncode == 0:
+            recovered.append(out)
+        else:
+            out.unlink(missing_ok=True)
+    for f in TEMP_DIR.iterdir():
+        if f.is_file():
+            f.unlink(missing_ok=True)
+    return recovered
 
 
 def _mux(s: _Session, out_dir: Path) -> Path:

@@ -11,8 +11,9 @@ if (-not (Test-Path (Join-Path $venv "Scripts\python.exe"))) {
     Write-Host "Creando entorno virtual..."
     python -m venv $venv
 }
-& "$venv\Scripts\python.exe" -m pip install --upgrade pip -q
-& "$venv\Scripts\python.exe" -m pip install -r (Join-Path $dir "requirements.txt") -q
+# --require-hashes: pip rechaza cualquier paquete cuyo hash no coincida con requirements.txt
+& "$venv\Scripts\python.exe" -m pip install --require-hashes --only-binary=:all: -r (Join-Path $dir "requirements.txt") -q
+if ($LASTEXITCODE -ne 0) { throw "Falló la instalación de dependencias." }
 
 $shell = New-Object -ComObject WScript.Shell
 function New-Shortcut($path) {

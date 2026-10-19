@@ -1,0 +1,7 @@
+# Dependencias directas. Para actualizar las versiones fijadas (con hashes):
+#   uv pip compile requirements.in --generate-hashes --python-platform windows -o requirements.txt
+mss
+Pillow
+pystray
+PyAudioWPatch
+imageio-ffmpeg

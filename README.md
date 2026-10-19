@@ -54,12 +54,28 @@ O a mano:
 
 ```powershell
 python -m venv .venv
-.venv\Scripts\pip install -r requirements.txt
+.venv\Scripts\pip install --require-hashes --only-binary=:all: -r requirements.txt
 .venv\Scripts\pythonw rcordr.pyw
 ```
 
-No hace falta instalar ffmpeg: viene incluido con `imageio-ffmpeg` (si hay un `ffmpeg`
-en el PATH, se usa ese).
+No hace falta instalar ffmpeg: viene incluido con `imageio-ffmpeg`.
+
+## Seguridad y privacidad
+
+- Funciona sin permisos de administrador y **no usa la red**: no envía nada ni abre puertos.
+- Los atajos usan `RegisterHotKey`: la app solo recibe sus tres combinaciones, no ve el
+  resto de lo que escribes (no es un gancho de teclado).
+- `requirements.txt` fija versiones exactas con **hashes SHA-256** y el instalador usa
+  `--require-hashes --only-binary=:all:`: pip rechaza cualquier paquete alterado y no
+  ejecuta código de compilación. Para actualizar: editar `requirements.in` y ejecutar
+  `uv pip compile requirements.in --generate-hashes --python-platform windows -o requirements.txt`.
+- Siempre se usa el ffmpeg incluido en el paquete verificado; no se busca en el `PATH`
+  ni se acepta `IMAGEIO_FFMPEG_EXE`.
+- Al arrancar se vacía `%USERPROFILE%\.rcordr	mp`. Si quedó un vídeo a medias por un cierre
+  inesperado, se recupera (sin sonido) como `video_recuperado_*.mp4` en la carpeta de vídeos.
+- Ten en cuenta que si tienes activado el historial del portapapeles (`Win+V`) o su
+  sincronización, Windows guarda ahí las capturas. Y que el sonido del ordenador incluye
+  la voz de los demás en una llamada.
 
 ## Cómo funciona
 
